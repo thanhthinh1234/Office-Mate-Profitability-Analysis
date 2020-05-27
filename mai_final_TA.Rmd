@@ -1,0 +1,1094 @@
+---
+title: "OfficeMate Technical Appendix"
+author: "Thinh Mai"
+date: "12/01/2019"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include = FALSE}
+## Course: 5210 Data Visualization
+## Purpose: Final
+## Date: December 1, 2019
+## Authors: Thinh Mai
+
+```
+
+```{r clear env., message = FALSE, echo = FALSE}
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE))
+
+# Clear environment of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE)lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), detach, character.only = TRUE, unload = TRUE)
+
+```
+
+# Project Description
+
++ The provided dataset is a representative sample of daily sales of an online office supply store, OfficeMate. The variables include Order ID, the order and ship date, Customer ID, segment, region, category as well as discount amount per each order. They have been in business since 2012 and have done well. However, they are facing increased competition from Amazon and online retailers, so our purpose is to address OfficeMate's concerns about how to be more effective and strategic to improve profitability.For a better analysis, a few new variables created such as price, cost, season, profitable, discount eligible and order processing days. 
+
+
+# Load Libraries
+
+```{r libraries, message = FALSE}
+# Load libraries
+library(tidyverse)
+library(dplyr)
+library(ggplot2) 
+library(gridExtra) # use to put graphs together in the same frame
+library(scales)    # use to improve colors
+library(janitor)  # piping function
+library(kableExtra)    # clean table design
+library(GGally) #used to display ggpairs
+library(knitr)
+library(MultinomialCI) # multinomial CI for factor variabels
+library(htmlTable) # format html tables
+library(Hmisc) # for corr. test of multiple variables
+library(shades) # for color
+library(zoo)
+library(inspectdf) #load auto EDA
+library(DataExplorer) #load another auto EDA
+
+```
+
+# Set up my working directory
+```{r}
+setwd("C:/Users/Mai/Downloads")
+```
+
+#Load and transform data
+```{r load data}
+# Load data
+od <- read.csv("Office_Data.csv") 
+
+#create a column for price per unit
+od$price <- od$Revenue/od$Quantity
+
+#create a column for days difference (order processing days) between ship date and order date
+
+od$days <- as.Date((od$Ship.Date), format="%m/%d/%Y") - as.Date(od$Order.Date, format = "%m/%d/%Y")
+
+#create a column to show if an order receive a discount YES or NO
+od$discount_eligible <- ifelse(od$Discount >0, "YES","NO")
+
+#create a column for cost
+od$cost <- od$Revenue - od$Profit
+
+#Create a new column for Season
+
+yq <- as.yearqtr(as.yearmon(od$Order.Date, "%m/%d/%Y") + 1/12)
+      od$Season <- factor(format(yq, "%q"), levels = 1:4, 
+      labels = c("winter", "spring", "summer", "fall"))
+      
+
+#create a new column for profitable
+od$profitable <- ifelse(od$Profit >0, "YES", "NO")
+         
+         
+```
++ creating five new columns: price, days, discount_eligible, profitable, season
+ 
+    - price per unit = revenue/quantity
+    - as.date() to convert date time format and calculate the day difference between shipping date and order date
+    - if discount amount is greater than zero, the order marked as YES for discount_eligible. NO for discount amount that is less than zero
+    - cost = revenue- profit 
+    - season column created based on the order date
+    - profitable column lets us know if an order helps the company to gain profits or not (profit>0)
+    
+
+# Base EDA Step 1: Uni-Variate Non-Graphical EDA
+
+```{r view data}
+# View the data
+head(od)
+
+```
++ Initial questions about the data
+
+    - we should seperate and group customers by the product name so it is easier to see overall and individual effects of customers per product name
+      - with many different customer ids this may not be worthwhile
+      - there are 1850 different product names, it is not practical to group them based on product names
+      
+
+
++ Data is tidy, ready to start analysis
+
+    - data in each column is of the same type
+    - creating new columns shouldn't affect this 
+    - no duplicate columns
+  
+```{r structure of data}
+# Examine the structure of the data
+str(od)
+
+```
+
++ 9994 observations of 24 variables
+
++ 19 categorical/factor variables (oder id, order date, ship date, ship mode, customer id, segment, country, city, state, postal code, region, product id, category, sub-category, product name, days, discount_eligible, quantity, season)
+  
+    - there are 4 ship modes: 'same day', 'first class', 'second class' and 'standard class'
+    - segment are 'consumer', home office' and 'corporate'
+    - category are 'furniture', office supplies' and 'technology'
+    - there are 17 sub-category
+    - 4 regions: Central, East, South, West
+    - Discount_eligible YES and NO
+    - order id is an unique number associated to each order
+    - number of units bought (quantity) are countable
+    - customer id is also an unique number
+    - unique product number can change regardless of which order
+      - analyzing order id, customer id and product id much furthermay does not look worthwhile
+      - there are too many values, and on top of that are largely arbitrary
+      - product id could be useful if we were able to group based on product category
+      - it is also helpful if we have a master table for customers so that we can do a look up based on customer IDs
+    - season: 'winter','spring','summer','fall'
+
+
++  5 quantitative variables (price, profit, revenue ,discount, cost)
+
+    - the product price at the time of the order
+    - cost calculated by taking revenue subtract profit
+    - price is currenly shown on one unit
+    - revenue and profit are given
+    
+      
+
+```{r descriptive stats.}
+# Examine the descriptive statistics
+summary(od)
+
+```
+
++ Data observations
+
+    - seems to be an even number of observations for each category, sub category and product name
+    - has the most order of the period between 9/6/2014 and 12/10/2015
+    - mean for discount is low, indicating that the data will be skewed
+      - we will use median to conduct all analyses as a better measurement for the data
+    - office supplies category is the most popular, while home office is the least of segment 
+    - standard class is the most popular shipping method, usually takes 4-8 days
+    - there is only one country (United States) of data, this can have negative effects on creating strategy to increase profitability internationally
+    - there are outliers in revenue due to an significant maximum value compared with the mean.  
+      - this leads to the same thing with price, profit and cost.
+      
++ Questions about the data
+    
+    - which sub category and product name are under office supplies category (the most popular)
+    - what customers ordered the most, in which region?
+      - does it always come with good discount when they place an order?
+    - very curious about ship mode and days to process, with how to analyze those
+      - do the days stay consistent based on the shipping method?
+
++ Potential research questions / issues
+ 
+    - what is the relationship between category and shipmode and profit?
+    - does the price of a product affect any increase in profit from a discount
+      - will need to account for quantity as well, maybe create a grid
+      - otherwise it will be difficult to analyze one or the other 
+    - will need to see if there are spikes in placing orders per category or sub-category for certain period of days
+      - and see if this is due to a discount or a shipping method for that specific category
+    - check Order ID and Product ID as well as Region with some other variables such as category
+      - do this during multivariate just in case
+    - there is no master lookup for customer ids
+      - if might help to identity which customer place the most orders
+    - is there a season that sales are more than others?
+    - having more profitable sales does not guarantee to gain profit in a big picture 
+      
++ Potential null hypotheses for the data
+
+    - if there is a profit difference between category, it does not affect sales
+      - this would work with sub-category as well
+    - if there is a profit difference, it is the same across region
+    - there is no difference in profit gains based on shipping method and discount
+    - need to examine the statistical validity of these claims   
+    - there is no difference in profit gains in 4 seasons
+      
++ New variables we wish to create
+
+    - have number of days from placing the order until receiving the product, customer name in their own respective columns 
+      - "days" is already included in the transform data section
+    - have a new variable as expense. Curious to see how it would affect the cost
+    - we will most likely want to create another column that cost and price per unit
+      - they are already included in the transform data section.
+    - the cost difference of each ship mode
+      
+# Base EDA Step 2: Uni-Variate Graphical EDA
+
+Here we will examine each variable individually
+```{r}
+od %>%
+  plot_bar()
+
+```
+
++ Fall is the most popular season for online orders
+
+    - there is not a significant difference between number of orders placed throughout the year except for Fall 
+      - could be because this is "back to school" season
+    - profitable sales are as fourth times more than not-profitable sales
+      - need to verify if this means the company gain profit in general because it could mean we generate profits for cheaper products then suffer losses with the expensive ones
+    - using plot_bar is a bit messy, will represent the data below
+
+```{r message = FALSE}
+# all factor variables together - only use bar graphs for categorical
+grid.arrange(
+
+    ggplot(data = od, mapping = aes(x = Ship.Mode)) + geom_bar(), # shipmode
+
+    ggplot(data = od, mapping = aes(x = Segment)) + geom_bar(), # segment 
+
+    ggplot(data = od, mapping = aes(x = Country)) + geom_bar(), # country
+    
+    ggplot(data = od, mapping = aes(x = Region)) + geom_bar(), # region
+    
+    ggplot(data = od, mapping = aes(x = Category)) + geom_bar(), # category
+    
+    ggplot(data = od, mapping = aes(x = days)) + geom_bar(), # order processing days
+    
+    ggplot(data = od, mapping = aes( x = discount_eligible)) + geom_bar(), #discount_eligible
+    
+    ggplot(data = od, mapping = aes(x  = Season)) + geom_bar(), # season
+    
+    ggplot(data = od, mapping = aes(x  = Quantity)) + geom_bar(), # quantity
+    
+    ggplot(data = od, mapping = aes(x  = profitable)) + geom_bar(), # profitable
+    
+  
+    
+
+    
+    ncol = 2)
+
+```
+
+  
++ standard class comes up the most for shipping mode 
+
+    - this method usually takes about 4-8 days to process
+      - from the date the customer place an order to the date the product is actually shipped
+    - it does raise a question on why customers does not choose other shipping methods
+      - for faster timing such as same day and first class
+
+
++ office supplies sold a lot more compared with others in category
+
+    - is this simply due to the specific category preference?
+    - or is this due to discount offered on those product under office supplies category occuring more often?
+    - it might be neccessary to find a relationship between this category and segment
+
+
++ Consumer seems to be the most popular under Segment
+
+    - while Corporate is only the second most popular
+      - expect it be the highest due to the highest sales volume of office supplies
+      - might need to figure out what the reasons are
+    - Consumer is the most popular as mentioned above
+      - we can probably use category to identify which groups of sub-category work best with discount if possible
+      
+
+
++ South region has the least number of orders compared with other regions
+
+    - around 15k orders
+    - historically, the South relied heavily on agriculture, people might not have the needs to make many purchases from OfficeMate.
+    - West region has the most orders
+      - Interesting point since this area is also impacted significant by Amazon, the main competitor
+    
+
+
++ most orders are processed within 4 days
+
+    - this makes sense because most orders placed with the standard shipping
+    - we will try to find if there are any inconsistencies between days process and shipping mode
+
+
++ there is not a significant difference in discount eligible 
+    
+    - number of orders placed without being offered a discount is slightly lower than the ones with a discount
+      - this might explain why consumers buy more but not corporate since corporate usually purchase with a large volume and they are looking for the lowest price
+    - we also want to check wheter discount have any effect on profit per segment/category
+    
++ The common orders have 2,3 products
+    
+    - explains well why customers take the most majority of segment
+    - we also want to check wheter this have an effect on the profit 
+    
+
+## Quantitative variables
+```{r message = FALSE}
+# price, volume
+grid.arrange( 
+  # histograms and box plots grouped together
+  ggplot(data = od, mapping = aes(x = price)) + geom_histogram(), # price    
+  ggplot(data = od, mapping = aes(x = 1, y = price)) + geom_boxplot() + coord_flip(),  
+  
+  ggplot(data = od, mapping = aes(x = Profit)) + geom_histogram(), # profit
+  ggplot(data = od, mapping = aes(x = 1, y = Profit)) + geom_boxplot() + coord_flip(), 
+  
+  ggplot(data = od, mapping = aes(x = Revenue)) + geom_histogram(), #revenue
+  ggplot(data = od, mapping = aes(x = 1, y = Revenue)) + geom_boxplot() + coord_flip(),
+  
+  ggplot(data = od, mapping = aes(x = Discount)) + geom_histogram(), #discount
+  ggplot(data = od, mapping = aes(x = 1, y = Discount)) + geom_boxplot() + coord_flip(),
+  
+  ggplot(data = od, mapping = aes(x = cost)) + geom_histogram(), #cost
+  ggplot(data = od, mapping = aes(x = 1, y = cost)) + geom_boxplot() + coord_flip(),
+  
+  
+
+  ncol = 2)
+
+```
+
++ price column is centered around the left side of the distribution
+    
+    - this makes sense considering quantity and revenue do the same, and price is simply revenue divided by quantity
+    - most of prices are less than $500 
+    - there are some price points more than 3000 on the box plot
+      - this is a lot of money for office supplies, could it be for furniture and technology
+      - did it bring a lot of profits?
+      
+
++ Discount is all over place
+
+    - the data is centered right above 0.2 and most at 0 (no discount)
+      - most discount is at 0.8
+    - we want to test price accounting for discount to see the impact of it on profit per segment/category and maybe region
+    
+    
++ cost column is as similar as price
+    
+    - considering cost is revenue subtracting profit 
+      -there are some cost points almost at 25000 on the box plot
+      -if we can reduce that, it will likely help to boost the profitability
+
++ profit column almost resembles a normal distribution
+    
+    - can not really notice that on the histogram besides it's centered at zero (no profit) 
+    - on the box plot, the amount of points less than zero and more than zero almos the same
+      - this explains why there is almost no profit
+      - need to improve this to be more profitable
+      
++ Revenue column 
+    
+    - nothing new here considering it's related to cost and profit 
+      - will try to increase revenue and lower cost to get a higher profit
+      
+      
+```{r}
+od %>%
+  plot_correlation(maxcat = 3L)
+```
+
++ Show the correlation 
+    
+    - no questions raised here
+      
+
+# Base EDA Step 3: Multi-Variate Non-Graphical EDA
+
+## Categorical / Factor Variables
+```{r category and profitable}
+# category and profitable
+cp_table <- od %>%
+  tabyl(Category, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+cp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ most orders are profitable, which also shown above
+
+    - would like to check percentages, to see the proportions of each order on profitable
+    - 8058 total orders/sales are profitable, 1936 orders aren't profitable 
+      - would like to check the ones that aren't profit table
+      - do they possess a big negative amount, do they fall into the technology and furniture category?
+
+```{r segment and profitable}
+# segment and profitable
+sp_table <- od %>%
+  tabyl(Segment, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+sp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ the majority of orders generated profits
+
+    - consumer again is the most popular segment 
+    - these ratios seem similar to the sales/orders placed based on category
+      - there might be room to do percentages with these as well
+    - 8058 orders are profitable while 1936 did not generate any profits
+
+```{r Season and profitable}
+# season and profitable
+ssp_table <- od %>%
+  tabyl(Season, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+ssp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ Fall season has the most sales which are profitable but also has the most sales that are not profitable
+
+    - this would explain the total orders placed in this season (the most in Fall)
+      - might be due to the back to school season
+    
+```{r quantity and profitable}
+# quantity and profitable
+qp_table <- od %>% 
+  tabyl(Quantity, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+qp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ Quantity 2 and 3 have the most sales which are profitable
+
+    - this is as we expected, since the most orders are came with 2,3 products
+    - Quantity 11 has almost 95% profitable (32/34) * 100
+    - Big orders seems to be profitable than not profitable
+
+```{r shipping mode and profitable}
+# shipping mode and profitable
+smp_table <- od %>%
+  tabyl(Ship.Mode, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+smp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ Most profitable sales from Standard Class
+
+    - Ratio wise, Second Class has the least percentage of non-profitable orders (315/1630) = 19.32%
+    - Standard class has the most sales which are profitable, this makes sense considerating most orders placed with the standard class shipping method
+  
+  
+```{r region and profitable}
+# region and profitable
+rp_table <- od %>%
+  tabyl(Region, profitable) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+rp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ most profitable sales from West and East region
+
+    - while Central has the most non-profitable sales  
+
+```{r segment and ship mode}
+#
+sss_table <- od %>%
+  tabyl(Segment,Ship.Mode) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+sss_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
++ Standard Class is the most popular method
+
+    - does it also mean standard class bring back the most profit?
+    
+### specific analsyis 
+
+```{r}
+# Category, Segment and Profitable 
+csp_table <- od %>%
+  tabyl(Category, profitable, Segment) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+csp_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+# Category, Segment and Discount Eligible
+csd_table <- od %>%
+  tabyl(Category,discount_eligible,Segment ) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  kable()
+
+csd_table %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
++ Furniture and Technology are the most popular/profitable products for OffiCeMate across all segments
+    
+    - side note: Consumer is on the far left, then Corporate then Home Office
+    - both profitable and discount eligible have a lot of entries
+    - Across three segment, OffiCe Supplies always have more orders without having a discount than the discounted ones
+      -will give us an idea of the effectiveness of having a discount
+      
+    - Office supplies are the most profitable and popular across all segments
+      - Profitable sales are more than the non-profitable ones
+      - if we can take advantage of this, it will help to boost the profitability even more
+    - Keep our focus on furniture and technology products as well
+    
+
+## Quantitative Variables
+
+```{r}
+# are the correlations statistically significant?
+od %>%
+  select_if(is.numeric) %>%
+  as.matrix() %>%
+  rcorr(.)
+
+
+```
++ quantity and profit are correlated with 0.07
+
+    - this is important because this means quantity bought increase with profit
+    - cost and price have positive correlation of 0.81, which makes sense 
+    - cost and revenue have a positive correlation of 0.93, which also makese sense. 
+      - cost and profit as well, with a positive correlation of 0.12, the higher cost the lower profit we will have
+
++ based on this correlation table, it seems that cost are the most important part
+
+    - we can not see the correlation of revenue/profit with profitable or discount eligible, so we will need to investigate in the graphical
+    - but we can clearly see the profit and discount have a negative correlation of -0.22. This makes sense since if discounts are offered, we will get less profits
+
+# Base EDA Step 4: Multi-Variate Graphical EDA    
+## Plots with multiple categorical variables
+
+```{r box plots}
+# discrete variables grouped together with box plots (segment, category, season)
+grid.arrange(
+  
+  ggplot(data = od, mapping = aes(x = Segment, y = Quantity)) + geom_boxplot() + coord_flip(), # segment
+  
+  ggplot(data = od, mapping = aes(x = Category, y = Quantity)) + geom_boxplot() + coord_flip(), # category
+  
+  ggplot(data = od, mapping = aes(x = Season, y = Quantity)) + geom_boxplot() + coord_flip(), # season
+  
+  #ggplot(data = od, mapping = aes(x = Sub.Category, y = Quantity)) + geom_boxplot() + coord_flip(), # Sub-category
+
+  ggplot(data = od, mapping = aes(x = profitable, y = Quantity)) + geom_boxplot() + coord_flip(), # profitable
+  
+  ggplot(data = od, mapping = aes(x = Region, y = Quantity)) + geom_boxplot() + coord_flip(), #region
+  
+  ggplot(data = od, mapping = aes(x = Ship.Mode, y = Quantity)) + geom_boxplot() + coord_flip(), #ship mode
+  
+  
+
+  ncol = 2)
+
+```
+
++ not sure what the best way to examine order id, product id and product name
+
+    - they all have so many values, so it is hard to group them and see what is going on
+    - a master table of the customer info would help in this case
+    
++ Toasted cereal seems to be the most popular flavor
+    
+    - fruit and cocoa are the least popular, this is probably due to less cereals in those flavor categories
+    - could also be because they are simply less well-liked
+
+```{r bar graphs}
+# code bar graphs using grid.arrange
+grid.arrange(
+    
+    ggplot(data = od, mapping = aes(x = Category, fill = profitable)) + geom_bar(stat = "count", position = "dodge"), # category - profitable
+
+    ggplot(data = od, mapping = aes(x = Category, fill = discount_eligible)) + geom_bar(stat = "count", position = "dodge"), # category - discount_eligible
+  
+    ggplot(data = od, mapping = aes(x = Category, fill = Season)) + geom_histogram(stat = "count", position = "dodge"), # category - season
+    
+    #ggplot(data = od, mapping = aes(x = Category, fill = Ship.Mode)) + geom_histogram(stat = "count", position = "dodge"), #category - 
+    
+    #ggplot(data = od, mapping = aes(x = Category, fill = days)) + geom_histogram(stat = "count", position = "dodge"), #days
+    
+    ggplot(data = od, mapping = aes(x = Category, fill = Region)) + geom_histogram(stat = "count", position = "dodge"), 
+    
+    #ggplot(data = od, mapping = aes(x = Category, fill = Segment)) + geom_histogram(stat = "count", position = "dodge"), 
+
+ncol = 1) 
+
+```
+
++ this data confirms what we have seen with our non-graphical analysis
+    
+    - Fall is the most popular season in term of selling our products
+    - For Office Supplies, more orders placed when there were no discounts
+    - Region: South has the least sales, considering it is an algriculturial area as mentioned aboved
+    - The most profitable products are from Office Supplies 
+    
+## Quantitative variables using GGpairs
+```{r}
+# ggparis on all quant. variables
+
+od %>%
+  select(price, Profit, Revenue, Quantity, cost, profitable) %>%
+  ggpairs()
+
+```
+
++ this is messy and confirms what we say in the multivariate non-graphical 
+
+    - we can see all the correlations as same as mentioned in the multivariate non-graphical
+    - perhaps there is a better way to graph the quantitative variables?
+    
+### scatter plots
+
+```{r}
+#Scatter of numeric variables by Revenue
+od %>%
+  select_if(is.numeric) %>%
+  plot_scatterplot(by = "Revenue")
+
+```
+
++ This is a bit messy but once again shows exactly what we mentioned above
+
+    -Price more than 3000 have the highest revenue
+    -Revenue generated/gathered the most when price is lower than 1000 in term of quantity
+    -There is a highest revenue point of more than 20000 but generated a negative profit
+
+
+```{r}
+#Scatter of numeric variables by Profit
+od %>%
+  select_if(is.numeric) %>%
+  plot_scatterplot(by = "Profit")
+
+```
+
++ Similar graphs but for Profit
+
+    -Has the most profit when cost is around 9000
+    -Show the same thing in related to revenue as shown in the above graph 
+    -Most profits generated when quantity is at 2,3 but has the highest profit when quantity = 5
+    
+```{r}
+od %>%
+  group_by(Segment, Ship.Mode) %>% 
+  summarise(med_profit = median(Profit)) %>% 
+  ggplot(aes(Segment, Ship.Mode)) + 
+  geom_tile(aes(fill = med_profit)) 
+
+
+``` 
+
++  Second Class generates most profits from Home Office segment 
+
+    - no new questions raised here 
+    
+    
+```{r}
+od %>%
+  group_by(Category,Season) %>% 
+  summarise(med_profit = median(Profit)) %>% 
+  ggplot(aes(Category,Season)) + 
+  geom_tile(aes(fill = med_profit)) 
+
+
+``` 
+
++ Technology brought the most profits in 4 seasons in term of med-profit 
+
+    - can clearly see the highest median profit in Technology for summer
+    - Techonology seems to do reall well in terms of gaining profit throughout the year
+    
+# Detailed EDA
+
+## all segment and category using median profit
+```{r category and profit}
+# 95% CI to get upper tail 0.975 is one-sided
+z <- qnorm(0.975)
+
+# incorporate CI into graphs
+od %>%
+  group_by(Segment, Category) %>%
+  summarise(median_profit = median(Profit), n = n(), sd = sd(Profit), ci = z * sd/sqrt(n)) %>%
+  ggplot(aes(x = Segment, y = median_profit, fill = as.factor(Category))) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  geom_text(aes(label = round(median_profit, 2)), vjust = -1, color = "black", position = position_dodge(0.9), size = 4) +
+  geom_errorbar(aes(ymin = median_profit - ci, ymax = median_profit + ci), width = 0.5, position = position_dodge(0.9))
+  
+```
+
++ Technology has the highest profit across all segments
+    
+    - this is most likely due to Technology has a large amount of Revenue and a lower cost 
+    - there is not a significant difference between office supplies and furniture in term of profit in all 3 segments.
+
+## (price per unit)
+```{r price per unit}
+# 95% CI to get upper tail 0.975 is one-sided
+z <- qnorm(0.975)
+
+# incorporate CI into graphs
+od %>%
+  group_by(Segment, Category) %>%
+  summarise(price_unit = median(price), n = n(), sd = sd(Profit), ci = z * sd/sqrt(n)) %>%
+  ggplot(aes(x = Segment, y = price_unit, fill = as.factor(Category))) + 
+  geom_bar(stat = "identity", position = "dodge")  
+
+```  
+
++ Products fall in Technology category are the most expensive
+
+    - Office Supplies are the least expensive, this explains even though a lot of products sold in this category, they do not generate enough or high profit
+    - since its more expensive for furniture and techonoloy, it's likely that a discount in these categories will incite more purchases
+    
+    
+## sum of profit across categories (discount_eligible)
+```{r}
+options(scipen = 999)
+#increase profit with discount?
+discount_rev_plot <- od %>%
+  group_by(Segment,Category, discount_eligible) %>%
+  summarise(sum_profit = sum(Profit)) %>%
+  #filter(any(Segment ='Office Supplies')) %>%
+  ggplot(aes(x = Category, y = sum_profit, group = discount_eligible, fill = discount_eligible)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Profit", title = "total profit for discount/no discount",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)
+  #geom_hline(aes(yintercept = 0))
+ 
+
+
+discount_rev_plot
+
+
+```
+
+
++ this graph shows the relationship between discount eligible and total profit on each category
+
+    - having discount or not do not make an impact in any categories
+    
+## sum of profit across categories (profitable)
+```{r}
+options(scipen = 999)
+#increase profit if it is profitable?
+pro_profit_plot <- od %>%
+  group_by(Segment,Category, profitable) %>%
+  summarise(sum_profit = sum(Profit)) %>%
+  ggplot(aes(x = Category, y = sum_profit, group = profitable, fill = profitable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Profit", title = "total profit for profitable/no profitable",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+pro_profit_plot
+
+```
+ 
++ this graph shows the relationship between profitable and total profit on each category
+
+    - again, it seems like the company do not make any profit out of Furniture
+      -the non-profitable and profitable portions are very close to each other
+    - office supplies also have a big amount of non-profitable sales while technology, as expected have a small portion of it
+
+## segment median of profit across categories (discount_eligible)
+```{r}
+options(scipen = 999)
+#increase profit with discount?
+med_discount_rev_plot <- od %>%
+  group_by(Segment,Category, discount_eligible) %>%
+  summarise(med_profit = median(Profit)) %>%
+  ggplot(aes(x = Category, y = med_profit, group = discount_eligible, fill = discount_eligible)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Median Profit", title = "median profit across categories for\n discount/no discount",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+med_discount_rev_plot
+
+```  
+
++ this graph shows the relationship between having discount and profit on each category across all segments
+
+    - discounts seem not to make any impact on gaining the profit
+      -there are even losses under furniture category
+      - this could due to a high discount that makes price very low and can not generate enough revenue to cover the actual cost
+
+## segment median of profit across categories (profitable)
+```{r}
+options(scipen = 999)
+
+med_profitable_rev_plot <- od %>%
+  group_by(Segment,Category, profitable) %>%
+  summarise(med_profit = median(Profit)) %>%
+  ggplot(aes(x = Category, y = med_profit, group = profitable, fill = profitable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Median Profit", title = "median profit across categories for\n profitable/non-profitable",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+med_profitable_rev_plot
+```
+
++ many profitable sales still can not cover the losses
+
+    - as concerned, there are a big amount of losses coming from profitable sales
+      -this could be become the company earn profit from cheaper products but not from the expensive ones
+      - can not afford the cost 
+
+## segment median of profit across categories (ship mode)
+```{r}
+options(scipen = 999)
+
+med_ship_mode_rev_plot <- od %>%
+  group_by(Segment,Category, Ship.Mode) %>%
+  summarise(med_profit = median(Profit)) %>%
+  ggplot(aes(x = Category, y = med_profit, group = Ship.Mode, fill = Ship.Mode)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Median Profit", title = "median profit across categories for\n profitable/non-profitable",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+med_ship_mode_rev_plot
+```
+
++ Same Day shipping has a significant impact on Technology
+
+    - there is an huge increase in profit coming from technology category with the same-day delivery 
+      -while there aren't big difference in the same matter of the other categories 
+      - this is important for the findings 
+
+## segment median of profit across categories (Season)
+```{r}
+options(scipen = 999)
+
+med_season_plot <- od %>%
+  group_by(Segment,Category, Season) %>%
+  summarise(med_profit = median(Profit)) %>%
+  ggplot(aes(x = Category, y = med_profit, group = Season, fill = Season)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Median Profit", title = "median profit across categories for\n profitable/non-profitable",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+med_season_plot
+```
+
++ Most profit generated in Winter and Summer for Technology
+
+    - As mentioned above, Fall is the most popular season for people to place their orders
+      -however, it did not generate enough profit compared with others
+      - again, this could be most orders place have a small values
+
+## segment median of profit across categories (Region)
+```{r}
+options(scipen = 999)
+
+med_reg_plot <- od %>%
+  group_by(Segment,Category, Region) %>%
+  summarise(med_profit = median(Profit)) %>%
+  ggplot(aes(x = Category, y = med_profit, group = Region, fill = Region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_classic() +
+  labs(x = "Category", y = "Median Profit", title = "median profit across categories for\n profitable/non-profitable",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)  
+
+med_reg_plot
+```
+
++ Once again, furniture has a loss in profit 
+
+    - Central is the most popular area to gain profit under Technology category
+      -no important questions here
+
+## segment median of profit across categories (profitable)
+
+
+# Statistical EDA
+
+## Test Main Findings in Detailed EDA
+```{r}
+# need to create new variables for median revenue for t test
+od_test <- od %>%
+  mutate(med_profit = median(Profit))
+  
+# create data frame for filtering 
+od.df <- as.data.frame(od_test)
+
+#grouping and filtering for the 1st t test
+od_discount_test <- od.df %>%
+  group_by(Segment,Category,discount_eligible) %>%
+  filter(Category == 'Technology')
+
+#grouping and filtering for the 2nd t test
+od_group_test <- od.df %>%
+  group_by(Segment,Category,Ship.Mode ) %>%
+  filter(Category != 'Technology')
+
+#create a numeric column for ship mode
+
+
+
+
+#create a numerica column for the test 1 (discount_eligible)
+od_discount_test_1 <- od_discount_test %>%
+  mutate(dis_numeric = ifelse(discount_eligible == 'YES',1,0))
+
+#create a numeric column for the test 2 (profitable)
+
+od_group_test_1 <- od_group_test %>%
+  mutate(Ship.Mode_numeric = ifelse(Ship.Mode == 'Same Day',0,
+                                     ifelse(Ship.Mode == 'First Class',1,
+                                     ifelse(Ship.Mode == 'Second Class',2,3))))
+         
+         
+```
+
+
+```{r}
+# test two main findings and state whether they are practically or statistically significant
+
+# t- test of profit and discount eligible - null is that difference in means is equal to 0 
+(t1 <- t.test(od_discount_test_1$med_profit, od_discount_test_1$dis_numeric, conf.level = 0.95))
+
+# t- test of profit and profitable - null is that difference in means is equal to 0
+(t2 <- t.test(od_group_test_1$med_profit, od_group_test_1$Ship.Mode_numeric, conf.level = 0.95))
+
+```
+
++ 1 null: profit of Technology across all segments will not change if there is a discount or no discount
+
+    - we can reject the null hypothesis (p < alpha), there is in fact a difference
+    - this means this finding is statistically significant
+      - however it doesn't matter because the difference is not practically significant
+    - we can infer from the sample CI the population median profit is between 8.10 and 9.14 per order
+
+
++ 2 null: profit of Office Supplies and Furniture across all segments will not change if it has same-day delivery or not 
+
+    - we can reject the null hypothesis (p < alpha)
+    - this means our findings are statistically significant
+      - again, this should not matter since our findings are practically significant
+    - we can infer from the sample CI the population mean revenue is between 6.31 and 6.35 per order
+    
+
+# Summary of the Data
++ It would be great if we have more data to analyze who are our main customers (a master lookup for customers name from customer ids)
+
+    - we do know the selling price and cost based on revenue and profit. It would be helpful to know about the expenses, fixed cost in order to do more calculation to identify how to lower the cost in general
+    - we have found that profitable factor make the biggest difference in Furniture and Office Supplies
+      - is it because of the cost is high for these 2?
+    - knowing which seasons when being sold the most, and whether the discount or no discount have any impact on the profit as well as the number of orders
+    - the cost of each shipping method
+
+# Create Professional Quality Visuals
+
+## Ship Method Impact on Profit
+```{r}
+options(scipen = 999)
+# increasing profit depending on ship method?
+final_ship_toasted <- od %>%
+  group_by(Segment, Category, Ship.Mode) %>%
+  summarise(med_revenue = median(Profit)) %>%
+  #filter(any(Category = 'Technology')) %>%
+  ggplot(aes(x = factor(Category), y = med_revenue, group = Ship.Mode, fill = as.factor(Ship.Mode))) +
+  geom_bar(stat = "identity",width = 0.75, position = "dodge")+
+  #annotate("text",x =1, y = 27, label = "NO DISCOUNT", size = 2)+
+  scale_fill_manual(values =c("#9370DB","#4B0082","#8B008B","#DDA0DD"), name = "Ship Method")+
+  theme_minimal()+
+  labs(x = "", y = "", title = "Same-Day Shipping On Technology \nHas a Large Impact on Profit",
+       subtitle = "However there is little difference between each ship method \nin Furniture and Office Supplies") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)
+
+ship_final <- final_ship_toasted  
+  #theme(legend.position = "none") 
+
+ship_final
+
+```
+
+
+## Discount Impact on Profit
+```{r}
+options(scipen = 999)
+# increasing profit with discounts?
+final_disc_toasted <- od %>%
+  group_by(Segment, Category, discount_eligible) %>%
+  summarise(med_revenue = median(Profit)) %>%
+  #filter(any(Category = 'Technology')) %>%
+  ggplot(aes(x = factor(Category), y = med_revenue, group = discount_eligible, fill = as.factor(discount_eligible))) +
+  geom_bar(stat = "identity",width = 0.85, position = "dodge")+ 
+           #position = position_dodge())+
+  annotate("text",x =0.8, y = 30, label = "NO DISCOUNT", size = 2.5)+
+  scale_fill_manual(values =c("#4B0082","#8B008B"), name = "DISCOUNT")+
+  theme_minimal()+
+  labs(x = "", y = "", title = "Discounts on Any Categories \nDo Not Have a Significant Impact on Profit",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)
+
+final_disc <- final_disc_toasted + theme(legend.position = "none") 
+
+final_disc
+
+```
+
+## Save Visuals for Later Use
+```{r}
+# toasted flavor revenue for promos
+ggsave(filename = "shipping.png", plot = ship_final)
+
+# cocoa flavor revenue for ads
+ggsave(filename = "discounts.png", plot = final_disc)
+
+```

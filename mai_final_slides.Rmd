@@ -1,0 +1,216 @@
+---
+title: "The Effect of Discounting and Same-Day Shipping on Profits"
+author: "Thinh Mai"
+output: slidy_presentation
+---
+
+```{r echo = FALSE}
+# Course: 5210 Communicating Data
+# Purpose: Presentation Studio Video for OfficeMate
+# Date: December 12, 2019
+# Author: Thinh Mai
+
+```
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+```{r echo = FALSE}
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+
+# Clear environmet of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE)lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), detach, character.only = TRUE, unload = TRUE)
+
+```
+
+```{r message = FALSE, echo = FALSE}
+
+# Load packages
+library(tidyverse)
+library(dplyr)
+library(ggplot2) 
+library(gridExtra) # use to put graphs together in the same frame
+library(scales)    # use to improve colors
+library(janitor)  # piping function
+library(kableExtra)    # clean table design
+library(GGally) #used to display ggpairs
+library(knitr)
+library(MultinomialCI) # multinomial CI for factor variabels
+library(htmlTable) # format html tables
+library(Hmisc) # for corr. test of multiple variables
+library(shades) # for color
+library(zoo)
+library(inspectdf) #load auto EDA
+library(DataExplorer) #load another auto EDA
+
+setwd("C:/Users/Mai/Downloads")
+# Load data
+od <- read.csv("Office_Data.csv") 
+
+#create a column for price per unit
+od$price <- od$Revenue/od$Quantity
+
+#create a column for days difference (order processing days) between ship date and order date
+
+od$days <- as.Date((od$Ship.Date), format="%m/%d/%Y") - as.Date(od$Order.Date, format = "%m/%d/%Y")
+
+#create a column to show if an order receive a discount YES or NO
+od$discount_eligible <- ifelse(od$Discount >0, "YES","NO")
+
+#create a column for cost
+od$cost <- od$Revenue - od$Profit
+
+#Create a new column for Season
+
+yq <- as.yearqtr(as.yearmon(od$Order.Date, "%m/%d/%Y") + 1/12)
+      od$Season <- factor(format(yq, "%q"), levels = 1:4, 
+      labels = c("winter", "spring", "summer", "fall"))
+      
+
+#create a new column for profitable
+od$profitable <- ifelse(od$Profit >0, "YES", "NO")
+         
+         
+```
+
+
+How Could Advertising and Promotions Affect the Company in Sales and Revenue?
+===============================================
+
+<div style="float: right; width: 95%;">
+
++ Background
+
+    - A sample of 9,994 observations on daily online orders
+    - To be better effective and strategic to improve profitability
+    - New variables created to help in analyzing the data set and providing recommendations
+    - Cost = Revenue - Profit
+    - Price = Revenue / Quantity
+
++ The old saying “Time is Money” holds even more truth in today’s on demand economy
+
+    - We are in a fast-moving era
+    - same day delivery service occurs when goods are collected and delivered to customers within the same day
+
++ Having reasonable discount offers could affect our company profit and sales targets in the long run
+
+    - Increase value
+    - Maintain brand reputation
+
+
+
+</div>
+
+
+The Power of Same-Day Shipping on Profit
+===============================================
+
+<div style="float: right; width: 95%;">
+
++ Same-Day shipping Generated The Most Profit on Technology
+
+    - same day ship mode raises the most profit our company simply because it meets the customer expectations
+        - People are willing to pay more to get there orders as soon as possible
+    - By offering a fast and same-day delivery, we attract the customers and encourage them to place an order
+        - Explains why there is a boost in our profit on Technology across all segments
+       
+
+```{r}
+options(scipen = 999)
+# increasing profit depending on ship method?
+final_ship_toasted <- od %>%
+  group_by(Segment, Category, Ship.Mode) %>%
+  summarise(med_revenue = median(Profit)) %>%
+  #filter(any(Category = 'Technology')) %>%
+  ggplot(aes(x = factor(Category), y = med_revenue, group = Ship.Mode, fill = as.factor(Ship.Mode))) +
+  geom_bar(stat = "identity",width = 0.75, position = "dodge")+
+  #annotate("text",x =1, y = 27, label = "NO DISCOUNT", size = 2)+
+  scale_fill_manual(values =c("#9370DB","#4B0082","#8B008B","#DDA0DD"), name = "Ship Method")+
+  theme_minimal()+
+  labs(x = "", y = "", title = "Same-Day Shipping On Technology \nHas a Large Impact on Profit",
+       subtitle = "However there is little difference between each ship method \nin Furniture and Office Supplies") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)
+
+ship_final <- final_ship_toasted  
+  #theme(legend.position = "none") 
+
+ship_final
+```
+
+</div>
+
+
+Having Discounts Has No Impact on Profit
+===============================================
+
+<div style="float: right; width: 90%;">
+
++ Offering Discounts Do Not Generate Enough Profit
+
+    - TThe graph shows that even when discounts are offered,profit are not generated enough and even become negative
+    - When a discount offered, it lowers the revenue and can not make up for the actual cost
+    - People still makes regular purchases regardless of discounts
+
+```{r}
+options(scipen = 999)
+# increasing profit with discounts?
+final_disc_toasted <- od %>%
+  group_by(Segment, Category, discount_eligible) %>%
+  summarise(med_revenue = median(Profit)) %>%
+  #filter(any(Category = 'Technology')) %>%
+  ggplot(aes(x = factor(Category), y = med_revenue, group = discount_eligible, fill = as.factor(discount_eligible))) +
+  geom_bar(stat = "identity",width = 0.85, position = "dodge")+ 
+           #position = position_dodge())+
+  annotate("text",x =0.8, y = 30, label = "NO DISCOUNT", size = 2.5)+
+  scale_fill_manual(values =c("#4B0082","#8B008B"), name = "DISCOUNT")+
+  theme_minimal()+
+  labs(x = "", y = "", title = "Discounts on Any Categories \nDo Not Have a Significant Impact on Profit",
+       subtitle = "") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14), 
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+        axis.title.x = element_text(size = 10)) +
+  scale_y_continuous(labels = dollar)
+
+final_disc <- final_disc_toasted + theme(legend.position = "none") 
+
+final_disc
+```
+
+</div>
+
+
+Solution Proposal
+===============================================
+
+<div style="float: right; width: 95%;">
+
++ Shift the focus of same-day shipping on Technology to the other categories
+    - Ecommerce giants like Amazon have set a high standard of fast-delivery
+    - Customers then begin to expect from other retailers, including us OfficeMate
+    - We need to keep up with it to meet the increased demands as well as expectations from our customers
+
++ OfficeMate should decrease their efforts for offering regular discounts and up for alternative solutions
+     - Offer quantity discounts or bundle stock
+     - Utilize the discount budget to offer same-day shipping
+     - Doing these will help to attract new customers and keep customer retention
+
++ There is room for improvement
+
+  - Further analysis can be done if I have more information on certain variables
+  - Knowing which what the costs are for each ship mode would help to adjust the selling price to cover for the actual cost 
+
+</div>
+
+Contact Information
+===============================================
+
+<div style="float: right; width: 95%;">
+
+If you have questions or would like to discuss the analysis further, please contact me at tmai@seattleu.edu. I can also provide the Technical Appendix with my complete analysis and the data if you would like more detail.
+
+
